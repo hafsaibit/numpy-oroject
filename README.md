@@ -1,1 +1,1 @@
-# numpy-oroject
+# numpy-project
