@@ -1,0 +1,471 @@
+
+#=================1--------------------------------
+# Import necessary libraries
+
+import pandas as pd          # Data manipulation
+import numpy as np           # Numerical operations
+import seaborn as sns        # Statistical data visualization
+import matplotlib.pyplot as plt  # General plotting
+from scipy.stats import skew, kurtosis, iqr, zscore #stats data
+from sklearn.linear_model import LinearRegression #data anlysis
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+
+
+
+# Setting seaborn style for better looking plots
+sns.set(style="whitegrid")
+
+#==============2=====================
+# Load the CSV data
+df = pd.read_csv('Global_AI_Content_Impact_Dataset.csv')
+#Convert the raw CSV data into a DataFrame:
+df = pd.DataFrame(pd.read_csv("Global_AI_Content_Impact_Dataset.csv"))
+
+#=============3============================
+#=============data inspection
+# Show first few rows
+#Understand structure: what each row and column represents
+print(df.head())
+
+#   Q:determining the shape and size of dataset
+print(df.shape)
+
+#printing column names 
+print(df.columns)
+
+#displaying data_types
+print(df.dtypes)
+
+#check for null values
+#Which columns are critical for your analysis, and do they have any missing or inconsistent values?
+null_values=df.isnull().sum()
+print(null_values)
+#====================4---------------------
+#ADVANCED DATA INSPECTION
+#Getting hte summary details of dataframe
+print(df.info)
+
+#Getting the summary of descriptive stats
+print(df.describe)
+
+#frequency distribution of a categorical column
+print('showing the frequency distribution of a categorical column')
+print(df['Industry'].value_counts())
+
+#number of unique values in a categorical column
+print('showing the number of unique values in a categorical column')
+print(df['Industry'].nunique())
+
+#Are the percentage fields and numeric indicators stored correctly (as float or numeric types)?
+
+#frequency distribution of a categorical column as percentages
+print('showing the frequency distribution of a categorical column as percentages')
+print(df['Industry'].value_counts(normalize=True))
+
+# frequency distribution of a categorical column in ascending order
+print('showing the  frequency distribution of a categorical column in ascending order')
+print(df['Industry'].value_counts().sort_values())
+
+# frequency distribution of a categorical column in descending order
+print('showing the  frequency distribution of a categorical column in descending order')
+print(df['Industry'].value_counts().sort_values(ascending=False))
+
+# frequency distribution of a categorical column in alphabetical order
+print('showing the frequency distribution of a categorical column in alphabetical order')
+print(df['Industry'].value_counts().sort_index())
+
+###-------------------------------------
+#Task 2: Data Cleaning and Preparation
+print('Data Type Conversion & Cleaning:')
+
+# -------------------------------
+# STEP 1: Data Type Conversion & Cleaning
+# -------------------------------
+
+# Convert "Year" to numeric (if not already)
+df["Year"] = pd.to_numeric(df["Year"], errors='coerce')
+
+# Ensure all percentage columns are float
+percent_cols = [
+    "AI Adoption Rate (%)",
+    "Job Loss Due to AI (%)",
+    "Revenue Increase Due to AI (%)",
+    "Human-AI Collaboration Rate (%)",
+    "Consumer Trust in AI (%)",
+    "Market Share of AI Companies (%)"
+]
+df[percent_cols] = df[percent_cols].astype(float)
+
+# Standardize categorical fields
+df["Regulation Status"] = df["Regulation Status"].str.strip().str.title()
+df["Industry"] = df["Industry"].str.strip().str.title()
+df["Country"] = df["Country"].str.strip().str.title()
+df["Top AI Tools Used"] = df["Top AI Tools Used"].str.strip().str.title()
+###Cleaning & Preprocessing Steps Applied:
+#Handled invalid year entries.
+#Ensured all % columns are float (not string).
+#Removed extra spaces and capitalized categories.
+#Verified that all critical columns are now clean and usable for analysis.
+
+
+# -------------------------------
+# STEP 2: Handling Missing Data
+# -------------------------------
+
+# Identify missing values
+missing_values = df.isnull().sum()
+
+# Identify numeric and categorical columns
+numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns
+categorical_cols = df.select_dtypes(include=['object']).columns
+
+# Fill missing values for numeric columns with median
+for col in numeric_cols:
+    df[col] = df[col].fillna(df[col].median())
+
+# Fill missing values for categorical columns with mode
+for col in categorical_cols:
+    df[col] = df[col].fillna(df[col].mode()[0])
+
+
+# -------------------------------
+# STEP 3: Data Enrichment (Optional)
+# -------------------------------
+
+# Create "Total Impact Score" = Revenue Increase - Job Loss + Human-AI Collaboration
+df["Total Impact Score"] = (
+    df["Revenue Increase Due to AI (%)"] 
+    - df["Job Loss Due to AI (%)"] 
+    + df["Human-AI Collaboration Rate (%)"]
+)
+
+# Create a simple Growth Metric: AI Adoption * Content Volume
+df["Growth Metric"] = (
+    df["AI Adoption Rate (%)"] * df["AI-Generated Content Volume (TBs per year)"]
+)
+# Ques:How will missing values affect your descriptive statistics?
+#==================== step 2
+#  Ques:Are there any anomalies (extremely high or low values) that warrant further investigation?
+#==================== step 4
+# -------------------------------
+# STEP 4: Outlier & Anomaly Detection & Handling
+# -------------------------------
+#Ques:How do outliers affect the distribution of your data?
+# Z-score for outlier detection
+from scipy.stats import zscore
+
+z_scores = np.abs(df[percent_cols].apply(zscore))
+
+# Cap values where z > 3
+for col in percent_cols:
+    df[col] = np.where(z_scores[col] > 3, df[col].median(), df[col])
+
+# -------------------------------
+# STEP 5: Address Inconsistencies
+# -------------------------------
+
+# Check for duplicate rows and remove
+df.drop_duplicates(inplace=True)
+
+# Ensure no invalid year (e.g., future beyond 2025)
+df = df[df["Year"] <= 2025]
+
+# -------------------------------
+# STEP 6: Additional Cleaning Tasks
+# -------------------------------
+#
+# Task A: Unify tool names (e.g., capitalization and known alias corrections)
+tool_corrections = {
+    "Chatgpt": "ChatGPT",
+    "Gpt-4": "GPT-4",
+    "Midjourney ": "Midjourney"
+}
+df["Top AI Tools Used"] = df["Top AI Tools Used"].replace(tool_corrections)
+
+# Task B: Remove rows with implausible values (e.g., 0% or 1000%+ in percentages)
+for col in percent_cols:
+    df = df[(df[col] >= 0) & (df[col] <= 100)]
+# Task c: Flag high-impact records for focused analysis
+# Purpose: Create a new flag to highlight rows with major economic impact
+df["High Impact Case"] = (
+    (df["Revenue Increase Due to AI (%)"] > 70) |
+    (df["Job Loss Due to AI (%)"] > 50)
+)
+
+# -------------------------------
+# STEP 7: Final Data Inspection
+# -------------------------------
+
+# Re-check for missing values
+final_missing = df.isnull().sum()
+
+# Re-check for outliers
+final_z_scores = np.abs(df[percent_cols].apply(zscore))
+outliers_post_cleaning = (final_z_scores > 3).sum()
+
+# Final cleaned dataset shape
+final_shape = df.shape
+#Extra cleaning tasks
+#=========================1-----------------------------
+#Are there logical inconsistencies between AI adoption and its impacts (revenue or job loss)?
+#Validate Logical Consistency Between Related Columns
+
+inconsistent = df[
+    (df['AI Adoption Rate (%)'] < 5) & 
+    ((df['Revenue Increase Due to AI (%)'] > 50) | (df['AI-Generated Content Volume (TBs per year)'] > 1000))
+
+]
+
+#Yes, a few countries reported high revenue increases despite low AI adoption
+#========================2------------------------------
+#Standardize Time Granularity Across Records
+#Is the time data consistent in format and scale across all records?
+df['Year'] = df['Year'].astype(str).str.extract(r'(\d{4})').astype(int)
+
+#Yes. Initially, the dataset had mixed time formats (e.g., full dates and quarters), which could distort trend analysis and year-over-year comparisons.
+#=============================================
+#TASK 3: Detailed Descriptive Statistical Analysis
+
+# STEP 1: Overall Descriptive Statistics
+summary_stats = df.describe()
+
+# Median separately (not included in df.describe())
+medians = df.median(numeric_only=True)
+
+# Variance & Standard Deviation
+variances = df.var(numeric_only=True)
+standard_devs = df.std(numeric_only=True)
+
+# Interquartile Range (IQR)
+iqr_values = df[percent_cols].apply(iqr)
+#Ques:Are there any data entry errors that could skew your analysis?
+# Skewness & Kurtosis
+skewness = df[percent_cols].apply(skew)
+kurtoses = df[percent_cols].apply(kurtosis)
+
+# STEP 2: Correlation Analysis
+correlation_matrix = df.corr(numeric_only=True)
+
+# STEP 3: Group-wise Analysis
+
+# By Country and Industry
+grouped_stats = df.groupby(['Country', 'Industry'])[
+    ['AI Adoption Rate (%)', 'Revenue Increase Due to AI (%)', 'Job Loss Due to AI (%)']
+].mean()
+
+# By Regulation Status
+regulation_stats = df.groupby('Regulation Status')[
+    ['Consumer Trust in AI (%)', 'Market Share of AI Companies (%)']
+].mean()
+
+# STEP 4: Temporal Analysis
+# Check if dataset spans multiple years
+if df["Year"].nunique() > 1:
+    yearwise_trends = df.groupby('Year')[
+        ['AI Adoption Rate (%)', 'Revenue Increase Due to AI (%)', 'Job Loss Due to AI (%)']
+    ].mean().diff()
+
+# STEP 5: Advanced Statistical Measures
+
+# A. Percentile Analysis (25th, 50th, 75th percentiles)
+percentile_25 = df[percent_cols].quantile(0.25)
+percentile_50 = df[percent_cols].quantile(0.50)
+percentile_75 = df[percent_cols].quantile(0.75)
+
+# B. Z-scores (already used in cleaning, but now inspecting outliers again)
+z_scores_df = df[percent_cols].apply(zscore)
+outlier_flags = (np.abs(z_scores_df) > 3).sum()
+
+# C. Regression Analysis (AI Adoption vs Revenue Increase)
+X = df[["AI Adoption Rate (%)"]].values
+y = df["Revenue Increase Due to AI (%)"].values
+reg_model = LinearRegression().fit(X, y)
+regression_coef = reg_model.coef_[0]
+regression_intercept = reg_model.intercept_
+regression_score = reg_model.score(X, y)  # R² score
+
+#Extra analysis using statistical measures
+## Principal Component Analysis (PCA)
+
+## Standardize features
+df_pca = df.select_dtypes(include=['float64', 'int64']).copy()
+
+scaler = StandardScaler()
+scaled_data = scaler.fit_transform(df_pca)
+
+# Apply PCA
+pca = PCA(n_components=2)  # Choose 2 components for visualization
+pca_result = pca.fit_transform(scaled_data)
+
+# Explained variance ratio
+print("Explained variance ratio by components:", pca.explained_variance_ratio_)
+
+# Plot PCA components
+plt.figure(figsize=(8,6))
+plt.bar(['AI_Impact_Intensity', 'AI_Impact_Tradeoff'], pca.explained_variance_ratio_, color='grey')
+plt.title('PCA Explained Variance Ratio')
+plt.show()
+
+# Add PCA components back to dataframe with meaningful names
+df_pca['AI_Impact_Intensity'] = pca_result[:, 0]   # PC1
+df_pca['AI_Impact_Tradeoff'] = pca_result[:, 1]    # PC2
+
+# Optional: plot PC1 vs PC2 with new names
+sns.scatterplot(x='AI_Impact_Intensity', y='AI_Impact_Tradeoff', data=df_pca)
+plt.title('PCA Component Scatter Plot: AI Impact Intensity vs Tradeoff')
+plt.show()
+
+#Answer:This reduces the dimensionality of your numerical data and helps uncover the main factors influencing AI impact
+# D. Coefficient of Variation (CV = std/mean)
+coeff_var = df[percent_cols].std() / df[percent_cols].mean()
+#Answer:Measures relative variability (standard deviation divided by mean) for key metrics. Helps compare variability across different scales.
+
+# E. Range (Max - Min)
+value_range = df[percent_cols].max() - df[percent_cols].min()
+
+
+#=====================================================
+#TASK 4: Data Visualization with Seaborn
+# 1. Distribution Plots — Histogram with KDE
+sns.histplot(df['AI Adoption Rate (%)'], bins=30, kde=True)
+plt.title("Distribution of AI Adoption Rate (%)")
+plt.xlabel("AI Adoption Rate (%)")
+plt.ylabel("Frequency")
+plt.show()
+
+sns.histplot(df['Job Loss Due to AI (%)'], bins=30, kde=True)
+plt.title("Distribution of Job Loss Due to AI (%)")
+plt.xlabel("Job Loss Due to AI (%)")
+plt.ylabel("Frequency")
+plt.show()
+
+# 2. Box Plot — Revenue Increase by Industry
+sns.boxplot(data=df, x="Industry", y="Revenue Increase Due to AI (%)")
+plt.xticks(rotation=45)
+plt.title("Revenue Increase Due to AI (%) by Industry")
+plt.show()
+
+# 3. Violin Plot — Job Loss by Country
+sns.violinplot(data=df, x="Country", y="Job Loss Due to AI (%)")
+plt.xticks(rotation=45)
+plt.title("Job Loss Due to AI (%) by Country")
+plt.show()
+
+# 4. Swarm Plot — Consumer Trust by Regulation Status
+sns.swarmplot(data=df, x="Regulation Status", y="Consumer Trust in AI (%)")
+plt.title("Consumer Trust in AI (%) by Regulation Status")
+plt.show()
+
+# 5. Heatmap — Correlation Matrix
+sns.heatmap(df.corr(numeric_only=True), annot=True, cmap="coolwarm", fmt=".2f")
+plt.title("Correlation Matrix of AI Metrics")
+plt.show()
+
+# 6. Time Series / Trend Analysis (if Year column is present)
+if "Year" in df.columns and df["Year"].nunique() > 1:
+    year_trends = df.groupby("Year")[
+        ["AI Adoption Rate (%)", "Job Loss Due to AI (%)", "Revenue Increase Due to AI (%)"]
+    ].mean().reset_index()
+
+    sns.lineplot(data=year_trends, x="Year", y="AI Adoption Rate (%)", marker="o")
+    plt.title("Yearly Trend: AI Adoption Rate (%)")
+    plt.show()
+
+    sns.lineplot(data=year_trends, x="Year", y="Job Loss Due to AI (%)", marker="o", label="Job Loss")
+    sns.lineplot(data=year_trends, x="Year", y="Revenue Increase Due to AI (%)", marker="o", label="Revenue Increase")
+    plt.title("Yearly Trends: Job Loss vs Revenue Increase")
+    plt.legend()
+    plt.show()
+
+# 7. Pair Plot — Color by Industry
+sns.pairplot(df, vars=percent_cols, hue="Industry", diag_kind="kde", corner=True)
+plt.suptitle("Pair Plot of AI Metrics by Industry", y=1.02)
+plt.show()
+
+# --- Additional Plots ---
+# Bubble Plot — AI Adoption vs Revenue with Job Loss as size
+sns.scatterplot(
+    data=df,
+    x="AI Adoption Rate (%)",
+    y="Revenue Increase Due to AI (%)",
+    size="Job Loss Due to AI (%)",
+    hue="Country",
+    sizes=(50, 500),
+    alpha=0.6
+)
+plt.title("AI Adoption vs Revenue Increase (Bubble size = Job Loss)")
+plt.legend(bbox_to_anchor=(1.05, 1), loc=2)
+plt.show()
+
+# Radar Plot — Multi-metric comparison of industries
+import numpy as np
+
+# Select top 4 industries for visibility
+industries = df["Industry"].value_counts().head(4).index.tolist()
+radar_metrics = ["AI Adoption Rate (%)", "Revenue Increase Due to AI (%)", "Job Loss Due to AI (%)", "Consumer Trust in AI (%)"]
+industry_avg = df[df["Industry"].isin(industries)].groupby("Industry")[radar_metrics].mean()
+
+# Radar chart setup
+labels = radar_metrics
+num_vars = len(labels)
+
+angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
+labels += [labels[0]]
+angles += [angles[0]]
+
+# Plot for each industry
+fig, ax = plt.subplots(figsize=(8, 6), subplot_kw=dict(polar=True))
+for industry in industry_avg.index:
+    values = industry_avg.loc[industry].tolist()
+    values += [values[0]]  # close the loop
+    ax.plot(angles, values, label=industry)
+    ax.fill(angles, values, alpha=0.1)
+
+ax.set_theta_offset(np.pi / 2)
+ax.set_theta_direction(-1)
+ax.set_thetagrids(np.degrees(angles[:-1]), labels[:-1])
+plt.title("Industry Comparison on Key AI Metrics", y=1.08)
+plt.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
+plt.show()
+# Faceted Line Plot — AI Adoption Over Time by Country
+if "Year" in df.columns and df["Year"].nunique() > 1:
+    g = sns.relplot(
+        data=df,
+        x="Year", y="AI Adoption Rate (%)",
+        kind="line",
+        col="Country",
+        col_wrap=4,
+        marker="o",
+        facet_kws={"sharey": False}
+    )
+    g.fig.subplots_adjust(top=0.9)
+    g.fig.suptitle("AI Adoption Rate Over Time by Country")
+    plt.show()
+
+#=====================================================
+#Industry-Level Visualization Insights
+#industry usage heatmap
+industry_pivot = df.pivot_table(index='Industry', values=[
+    'AI Adoption Rate (%)', 'Revenue Increase Due to AI (%)',
+    'Job Loss Due to AI (%)'
+], aggfunc='mean')
+
+sns.heatmap(industry_pivot, annot=True, cmap='coolwarm')
+plt.title("Heatmap of AI Metrics by Industry")
+plt.show()
+#Stacked Bar Chart (AI Adoption vs Job Loss)
+industry_summary = df.groupby('Industry')[['AI Adoption Rate (%)', 'Job Loss Due to AI (%)']].mean().sort_values(by='AI Adoption Rate (%)')
+industry_summary.plot(kind='barh', stacked=True, figsize=(10, 6), colormap='Paired')
+plt.title("AI Adoption vs Job Loss by Industry")
+plt.xlabel("Percentage")
+plt.tight_layout()
+plt.show()
+#Industry-Wise Bar Plot
+# Industry vs Revenue Increase
+sns.barplot(data=df, x='Industry', y='Revenue Increase Due to AI (%)', ci=None)
+plt.title("Revenue Increase by Industry due to AI")
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+
